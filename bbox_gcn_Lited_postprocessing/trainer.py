@@ -12,8 +12,10 @@ from six.moves import range
 from miscc.config import cfg
 from miscc.utils import mkdir_p, bbox_iou, bbox_refiner
 from model_graph import GCN, BBOX_NET
+import numpy as np
 plt.switch_backend('agg')
 
+import sys
 
 # ################## Shared functions ###################
 def load_params(model, new_param):
@@ -222,6 +224,16 @@ class LayoutTrainer(object):
         box_net = BBOX_NET(box_net_layers, batch_norm=mlp_normalization)
         return gcn, box_net
 
+    def process_other(self, curr, other):
+        l_curr = curr.shape[0]
+        l_other = other.shape[0]
+        if l_curr > l_other:
+            # print("inshape : ", curr.shape, other.shape)
+            curr = torch.split(curr,[l_other,l_curr-l_other], 0)[0]
+        elif l_curr < l_other:
+            # print("inshape : ", curr.shape, other.shape)
+            other = torch.split(other,[l_curr,l_other-l_curr], 0)[0]
+        return curr, other
 
     def train(self):
         # plot
@@ -277,19 +289,51 @@ class LayoutTrainer(object):
                 # for each image
                 for i in range(len(self.real_box)):
                     graph_objs_vector = self.gcn(self.objs_vector[i][0], self.graph[i])
+
+
                     boxes_pred = self.box_net(self.objs_vector[i][0], graph_objs_vector)
+                    print("boxes_pred, self.real_box[i][0])",boxes_pred.shape, self.real_box[i][0].shape)
+                    print ("boxes_pred, self.real_box[i][0])",boxes_pred, self.real_box[i][0])
+
+                    perm = np.random.randint(len(self.real_box), size=1)[0]
+                    # neg_state = state[perm]
                     # optimization
                     if i == 0:
                         err_bbox = self.criterion_bbox(boxes_pred, self.real_box[i][0])
+
+                        # contrastive neg Need to add in randome sampling 
+                        self.hinge = 1
+                        zeros = torch.zeros_like(err_bbox)
+                        neg_boxes_pred, neg_state = self.process_other(boxes_pred.clone(), self.real_box[perm][0].clone())
+                        neg = torch.max(
+                            zeros, self.hinge - self.criterion_bbox(neg_boxes_pred, neg_state)
+                        )
+                        print("err_bbox :", err_bbox.item(), " neg : ", neg.item())
+
+                        
                     else:
                         err_bbox += self.criterion_bbox(boxes_pred, self.real_box[i][0])
+                         # contrastive neg
+                        self.hinge = 1
+                        zeros = torch.zeros_like(err_bbox)
+                        neg_boxes_pred, neg_state = self.process_other(boxes_pred.clone(), self.real_box[perm][0].clone())
+                        neg += torch.max(
+                            zeros, self.hinge - self.criterion_bbox(neg_boxes_pred, neg_state)
+                        )
+
                 err_bbox = err_bbox / len(self.real_box)
                 err_total = cfg.TRAIN.COEFF.BBOX_LOSS * err_bbox
+
                 self.optimizer_gcn.zero_grad()
                 self.optimizer_bbox.zero_grad()
-                err_total.backward()
-                self.optimizer_gcn.step()
+                err_total.backward(retain_graph=True)
+
                 self.optimizer_bbox.step()
+
+                neg = neg / len(self.real_box)
+                
+                neg.backward()
+                self.optimizer_gcn.step()
 
             # save the best models
             print('comparing total loss...')
@@ -366,7 +410,7 @@ class LayoutTrainer(object):
             end_t = time.time()
             try:
                 print('[%d/%d][%d] Loss_total: %.5f Loss_bbox: %.5f Time: %.2fs' % (epoch, self.max_epoch,
-                      self.num_batches, err_total, cfg.TRAIN.COEFF.BBOX_LOSS*err_bbox, end_t - start_t))
+                      self.num_batches, 0, cfg.TRAIN.COEFF.BBOX_LOSS*err_bbox, end_t - start_t))
             except IOError as e:
                 print(e)
                 pass

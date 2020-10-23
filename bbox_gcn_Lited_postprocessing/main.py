@@ -88,6 +88,12 @@ if __name__ == "__main__":
             drop_last=True, shuffle=False, collate_fn=dataset_test.collate_fn,
             num_workers=int(cfg.WORKERS))
 
+    # dataiter = iter(dataloader_train)
+    # label_imgs, _, wrong_label_imgs, _, graph, bbox, objs_vector, key = dataiter.next()
+    # print(type(label_imgs))
+    # print(label_imgs.shape)
+
+
     # Define models and go to train/evaluate
     from trainer import LayoutTrainer as trainer
     if cfg.TRAIN.FLAG:

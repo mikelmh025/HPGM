@@ -1,0 +1,4 @@
+bbox_gcn_Lited_postprocessing/data
+*.pyc
+*.run
+output_bbox_gcn/*
