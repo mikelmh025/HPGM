@@ -40,6 +40,8 @@ __C.TRAIN.GENERATOR_LR = 2e-4
 __C.TRAIN.FLAG = True
 __C.TRAIN.GRAPH_PRE_NET = ''
 __C.TRAIN.GCN = ''
+__C.TRAIN.G = ''
+__C.TRAIN.D = ''
 __C.TRAIN.BOX_NET = ''
 
 __C.TRAIN.USE_GCN = True

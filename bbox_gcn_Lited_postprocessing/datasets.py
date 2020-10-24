@@ -85,7 +85,8 @@ class TextDataset(data.Dataset):
 
         if cfg.TRAIN.FLAG and self.train_set:
             # load train id of the dataset
-            filepath = os.path.join(data_dir, 'train_id.pickle')
+            filepath = os.path.join(data_dir, 'test_id.pickle')
+            # filepath = os.path.join(data_dir, 'train_id.pickle') ############### WRONG Thing to do ###########
             with open(filepath, 'rb') as f:
                 train_id = pickle.load(f)
             train_id = sorted(train_id)
@@ -96,10 +97,15 @@ class TextDataset(data.Dataset):
             self.filenames_train = sorted(self.filenames_train)
 
             # load graphs(adjacency matrix of a room to every room in a text)
-            self.graphs = self.load_graphs(data_dir, self.filenames_train)
+            self.graphs, self.edges = self.load_graphs(data_dir, self.filenames_train)
+            # print(self.edges[0].shape)
+            # print(len(self.edges))
 
             # load bounding boxes(1:room box position 2:room type)
-            self.bboxes = self.load_bboxes(data_dir, self.filenames_train)
+            self.bboxes, self.rooms_mks_s = self.load_bboxes(data_dir, self.filenames_train)
+            # print(self.rooms_mks_s[0].shape)
+            # print(len(self.rooms_mks_s))
+            # sys.exit()
 
             # load vectors of objects(1:room_class+size+position class 2:room type)
             self.objs_vectors = self.load_objs_vectors(data_dir, self.filenames_train)
@@ -117,9 +123,9 @@ class TextDataset(data.Dataset):
                 self.filenames_test.append(self.filenames[idx])
             self.filenames_test = sorted(self.filenames_test)
             # load graphs
-            self.graphs = self.load_graphs(data_dir, self.filenames_test)
+            self.graphs, self.edges = self.load_graphs(data_dir, self.filenames_test)
             # load bounding boxes
-            self.bboxes = self.load_bboxes(data_dir, self.filenames_test)
+            self.bboxes, self.rooms_mks_s = self.load_bboxes(data_dir, self.filenames_test)
             # load vectors of objects
             self.objs_vectors = self.load_objs_vectors(data_dir, self.filenames_test)
             # build iterator
@@ -135,14 +141,17 @@ class TextDataset(data.Dataset):
     def load_graphs(self, data_dir, filenames):
         current_dir = os.path.join(data_dir, 'semantic-expression')
         graphs = []
+        edges = []
         for filename in filenames:
             path = os.path.join(current_dir, '{}.txt'.format(filename))
             # get the adjacent of the rooms
-            graph = self.build_graph(path)
+            graph,edge = self.build_graph(path)
             # probabilistic the adjacency of a room to every room
             graph = self.normalize_graph(graph)
             graphs.append(graph)
-        return graphs
+            edges.append(edge)
+
+        return graphs, edges
 
     # build the node and edge according each text description
     # path: e.g., path = './semantic-expression/0.txt'
@@ -173,13 +182,30 @@ class TextDataset(data.Dataset):
                     roomnames.append('{}{}'.format(room, i+1))
                     counter += 1
             # handle adjacent
+
+            link_set = []
             for desc_link in desc_links:
                 # decide the position in adj
                 link = desc_link['room pair']
                 x = roomnames.index(link[0])
                 y = roomnames.index(link[1])
                 adj[x][y] = 1.0
-        return adj
+                
+                link_set.append(link)
+
+            triples = []
+            for k in range(len(roomnames)):
+                for l in range(len(roomnames)):
+                    if l > k:
+                        nd0, bb0 = roomnames[k], roomnames[k]
+                        nd1, bb1 = roomnames[l], roomnames[l]
+                        if [bb0, bb1] in link_set or [bb1, bb0] in link_set:
+                            triples.append([k, 1, l])
+                        else:
+                            triples.append([k, -1, l])
+            triples = torch.LongTensor(triples)
+
+        return adj, triples
 
     # normalize the input graph and output with the same size of input one
     def normalize_graph(self, graph):
@@ -222,11 +248,14 @@ class TextDataset(data.Dataset):
     def load_bboxes(self, data_dir, filenames):
         current_dir = os.path.join(data_dir, 'semantic-expression')
         bboxes = []
+        rooms_mks_s = []
         for filename in filenames:
             path = os.path.join(current_dir, '{}.txt'.format(filename))
-            bbox = self.build_bboxes(path)
+            bbox, rooms_mks = self.build_bboxes(path)
             bboxes.append(bbox)
-        return bboxes
+            rooms_mks_s.append(rooms_mks)
+            
+        return bboxes, rooms_mks_s
 
     # build a bounding box
     def build_bboxes(self, path):
@@ -264,7 +293,19 @@ class TextDataset(data.Dataset):
                     boxes[counter] = torch.FloatTensor([x0, y0, x1, y1])
                     objs[counter] = idx
                     counter += 1
-        return boxes, objs
+
+            im_size = 32
+            rooms_mks = np.zeros((objs.shape[0], im_size, im_size))
+           
+            for k, (rm, bb) in enumerate(zip(objs, boxes)):
+                x0, y0, x1, y1 = im_size*bb
+                x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
+                rooms_mks[k, x0:x1+1, y0:y1+1] = 1.0
+            rooms_mks = torch.FloatTensor(rooms_mks)
+            rooms_mks = self.transform(rooms_mks)
+            rooms_mks = torch.FloatTensor(rooms_mks)
+
+        return (boxes, objs), rooms_mks
 
     # load input vectors of objects as format (type, size, position)
     def load_objs_vectors(self, data_dir, filenames):
@@ -333,7 +374,9 @@ class TextDataset(data.Dataset):
 
         data_dir = self.data_dir
         graph = self.graphs[index]
+        edge = self.edges[index]
         bbox = self.bboxes[index]
+        rooms_mks_s = self.rooms_mks_s[index]
         objs_vector = self.objs_vectors[index]
 
         # load label images
@@ -363,14 +406,16 @@ class TextDataset(data.Dataset):
         # load mask images
         wrong_mask_img_name = os.path.join(data_dir, 'mask', '{}.png'.format(wrong_key))
         wrong_mask_imgs = get_imgs(wrong_mask_img_name, self.imsize, self.transform, normalize_img=self.norm)
-        return label_imgs, mask_imgs, wrong_label_imgs, wrong_mask_imgs, graph, bbox, objs_vector, key
+        return label_imgs, mask_imgs, wrong_label_imgs, wrong_mask_imgs, graph, edge, bbox, rooms_mks_s, objs_vector, key
 
     def prepair_test_pairs(self, index):
         # key = self.filenames[index]
         key = self.filenames_test[index]
         data_dir = self.data_dir
         graph = self.graphs[index]
+        edge = self.edges[index]
         bbox = self.bboxes[index]
+        rooms_mks_s = self.rooms_mks_s
         objs_vector = self.objs_vectors[index]
         # load label images
         if self.furniture == True:
@@ -384,7 +429,7 @@ class TextDataset(data.Dataset):
         mask_imgs = get_imgs_test(mask_img_name, self.imsize, self.transform, normalize_img=self.norm)
 
         # return imgs, wrong_imgs, embedding, key  # captions
-        return label_imgs, mask_imgs, graph, bbox, objs_vector, key
+        return label_imgs, mask_imgs, graph, edge, bbox, rooms_mks_s, objs_vector, key
 
     def __getitem__(self, index):
         return self.iterator(index)
@@ -397,13 +442,15 @@ class TextDataset(data.Dataset):
 
     def collate_fn(self, batch):
         # training set
-        if len(batch[0]) == 8:
+        if len(batch[0]) == 10:
             label_imgs = list()
             mask_imgs = list()
             wrong_label_imgs = list()
             wrong_mask_imgs = list()
             graph = list()
+            edge = list()
             bbox = list()
+            rooms_mks_s = list()
             objs_vector = list()
             key = list()
             # batch
@@ -415,18 +462,22 @@ class TextDataset(data.Dataset):
                 wrong_label_imgs.append(b[2][-1])
                 wrong_mask_imgs.append(b[3][-1])
                 graph.append(b[4])
-                bbox.append(b[5])
-                objs_vector.append(b[6])
-                key.append(b[7])
+                edge.append(b[5])
+                bbox.append(b[6])
+                rooms_mks_s.append(b[7])
+                objs_vector.append(b[8])
+                key.append(b[9])
             label_imgs = torch.stack(label_imgs, dim=0)
-            return label_imgs, mask_imgs, wrong_label_imgs, wrong_mask_imgs, graph, bbox, objs_vector, key
+            return label_imgs, mask_imgs, wrong_label_imgs, wrong_mask_imgs, graph, edge, bbox, rooms_mks_s, objs_vector, key
 
         # test set
-        elif len(batch[0])==6:
+        elif len(batch[0])==8:
             label_imgs = list()
             mask_imgs = list()
             graph = list()
+            edge = list()
             bbox = list()
+            rooms_mks_s = list()
             objs_vector = list()
             key = list()
             # batch
@@ -434,8 +485,10 @@ class TextDataset(data.Dataset):
                 label_imgs.append(b[0][-1])
                 mask_imgs.append(b[1][-1])
                 graph.append(b[2])
-                bbox.append(b[3])
-                objs_vector.append(b[4])
-                key.append(b[5])
+                edge.append(b[3])
+                bbox.append(b[4])
+                rooms_mks_s.append(b[5])
+                objs_vector.append(b[6])
+                key.append(b[7])
             label_imgs = torch.stack(label_imgs, dim=0)
-            return label_imgs, mask_imgs, graph, bbox, objs_vector, key
+            return label_imgs, mask_imgs, graph,edge, bbox, rooms_mks_s, objs_vector, key

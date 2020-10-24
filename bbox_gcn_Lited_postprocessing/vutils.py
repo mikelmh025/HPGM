@@ -478,3 +478,129 @@ def save_image_for_fid(tensor_real, tensor_fake, save_path_real,
 
 
 
+
+import webcolors
+from PIL import Image, ImageDraw, ImageOps, ImageFilter, ImageFont, ImageColor
+
+ID_COLOR = {1: 'brown', 2: 'magenta', 3: 'orange', 4: 'gray', 5: 'red', 6: 'blue', 7: 'cyan', 8: 'green', 9: 'salmon', 10: 'yellow'}
+
+def combine_images_maps(maps_batch, nodes_batch, edges_batch, \
+                        nd_to_sample, ed_to_sample, im_size=256):
+    maps_batch = maps_batch.detach().cpu().numpy()
+    nodes_batch = nodes_batch.detach().cpu().numpy()
+    edges_batch = edges_batch.detach().cpu().numpy()
+    batch_size = torch.max(nd_to_sample) + 1
+    
+    all_imgs = []
+    shift = 0
+    for b in range(batch_size):
+        inds_nd = np.where(nd_to_sample==b)
+        inds_ed = np.where(ed_to_sample==b)
+        
+        mks = maps_batch[inds_nd]
+        nds = nodes_batch[inds_nd]
+        eds = edges_batch[inds_ed]
+        
+        comb_img = np.ones((im_size, im_size, 3)) * 255
+        extracted_rooms = []
+        for mk, nd in zip(mks, nds):
+            r =  im_size/mk.shape[-1]
+            x0, y0, x1, y1 = np.array(mask_to_bb(mk)) * r 
+            h = x1-x0
+            w = y1-y0
+            if h > 0 and w > 0:
+                extracted_rooms.append([mk, (x0, y0, x1, y1), nd])
+        
+        # # draw graph
+        # graph_img = draw_graph(nds, eds, shift, im_size=im_size)
+        # shift += len(nds)
+        # all_imgs.append()graph_img
+        
+        # draw masks
+        mask_img = np.ones((32, 32, 3)) * 255
+        for rm in extracted_rooms:
+            mk, _, nd = rm 
+            inds = np.array(np.where(mk>0))
+            _type = np.where(nd==1)[0]
+            if len(_type) > 0:
+                color = ID_COLOR[_type[0] + 1]
+            else:
+                color = 'black'
+            r, g, b = webcolors.name_to_rgb(color)
+            mask_img[inds[0, :], inds[1, :], :] = [r, g, b]
+        mask_img = Image.fromarray(mask_img.astype('uint8'))
+        mask_img = mask_img.resize((im_size, im_size))
+        all_imgs.append(torch.FloatTensor(np.array(mask_img).transpose(2, 0, 1))/255.0)
+            
+        # draw boxes - filling
+        comb_img = Image.fromarray(comb_img.astype('uint8'))
+        dr = ImageDraw.Draw(comb_img)
+        for rm in extracted_rooms:
+            _, rec, nd = rm 
+            dr.rectangle(tuple(rec), fill='beige')
+            
+        # draw boxes - outline
+        for rm in extracted_rooms:
+            _, rec, nd = rm 
+            _type = np.where(nd==1)[0]
+            if len(_type) > 0:
+                color = ID_COLOR[_type[0] + 1]
+            else:
+                color = 'black'
+            dr.rectangle(tuple(rec), outline=color, width=4)
+            
+#         comb_img = comb_img.resize((im_size, im_size))
+        all_imgs.append(torch.FloatTensor(np.array(comb_img).\
+                                     astype('float').\
+                                     transpose(2, 0, 1))/255.0)
+    all_imgs = torch.stack(all_imgs)
+    return all_imgs
+
+
+def draw_graph(nds, eds, shift, im_size=128):
+
+    # Create graph
+    graph = AGraph(strict=False, directed=False)
+
+    # Create nodes
+    for k in range(nds.shape[0]):
+        nd = np.where(nds[k]==1)[0]
+        if len(nd) > 0:
+            color = ID_COLOR[nd[0]+1]
+            name = '' #CLASS_ROM[nd+1]
+            graph.add_node(k, label=name, color=color)
+
+    # Create edges
+    for i, p, j in eds:
+        if p > 0:
+            graph.add_edge(i-shift, j-shift, color='black', penwidth='4')
+    
+    graph.node_attr['style']='filled'
+    graph.layout(prog='dot')
+    graph.draw('temp/_temp_{}.png'.format(EXP_ID))
+
+    # Get array
+    png_arr = open_png('temp/_temp_{}.png'.format(EXP_ID), im_size=im_size) 
+    im_graph_tensor = torch.FloatTensor(png_arr.transpose(2, 0, 1)/255.0)
+    return im_graph_tensor
+
+def mask_to_bb(mask):
+    
+    # get masks pixels
+    inds = np.array(np.where(mask>0))
+    
+    if inds.shape[-1] == 0:
+        return [0, 0, 0, 0]
+
+    # Compute BBs
+    y0, x0 = np.min(inds, -1)
+    y1, x1 = np.max(inds, -1)
+
+    y0, x0 = max(y0, 0), max(x0, 0)
+    y1, x1 = min(y1, 255), min(x1, 255)
+
+    w = x1 - x0
+    h = y1 - y0
+    x, y = x0, y0
+    
+    return [x0, y0, x1+1, y1+1]

@@ -65,7 +65,7 @@ if __name__ == "__main__":
     if cfg.TRAIN.FLAG:
         from datasets import TextDataset
         dataset_train = TextDataset(cfg.DATA_DIR, base_size=cfg.TREE.BASE_SIZE,
-                                    transform=image_transform, train_set=True)
+                                    transform=image_transform, train_set=True) ## USING test data for train !!!!!!!!
         dataset_test = TextDataset(cfg.DATA_DIR, base_size=cfg.TREE.BASE_SIZE,
                                    transform=image_transform, train_set=False)
         assert dataset_train
@@ -89,9 +89,13 @@ if __name__ == "__main__":
             num_workers=int(cfg.WORKERS))
 
     # dataiter = iter(dataloader_train)
-    # label_imgs, _, wrong_label_imgs, _, graph, bbox, objs_vector, key = dataiter.next()
-    # print(type(label_imgs))
-    # print(label_imgs.shape)
+    # label_imgs, _, wrong_label_imgs, _, graph,edge, bbox, rooms_mks, objs_vector, key = dataiter.next()
+    # print(rooms_mks[0])
+    # print(len(rooms_mks))
+    # print(edge[0].shape)
+    # print(len(edge))
+    
+    # sys.exit()
 
 
     # Define models and go to train/evaluate
