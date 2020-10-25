@@ -85,7 +85,7 @@ class TextDataset(data.Dataset):
 
         if cfg.TRAIN.FLAG and self.train_set:
             # load train id of the dataset
-            filepath = os.path.join(data_dir, 'test_id.pickle')
+            filepath = os.path.join(data_dir, 'train_id.pickle')
             # filepath = os.path.join(data_dir, 'train_id.pickle') ############### WRONG Thing to do ###########
             with open(filepath, 'rb') as f:
                 train_id = pickle.load(f)

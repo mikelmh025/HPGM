@@ -55,16 +55,20 @@ def save_img_results(imgs_tcpu, real_box, boxes_pred, count, image_dir):
     vutils.save_bbox(
         real_img, real_box, '%s/count_%09d_real_bbox.png' % (image_dir, count),
         normalize=True)
-    vutils.save_bbox(
-        real_img, boxes_pred, '%s/count_%09d_fake_bbox.png' % (image_dir, count),
-        normalize=True)
+    # vutils.save_bbox(
+    #     real_img, boxes_pred, '%s/count_%09d_fake_bbox.png' % (image_dir, count),
+    #     normalize=True)
     # save floor plan images
     vutils.save_floor_plan(
         real_img, real_box, '%s/count_%09d_real_floor_plan.png' % (image_dir, count),
         normalize=True)
-    vutils.save_floor_plan(
-        real_img, boxes_pred, '%s/count_%09d_fake_floor_plan.png' % (image_dir, count),
-        normalize=True)
+
+    # save_image(boxes_pred, "test.png")
+    save_image(boxes_pred.mean(0)*255, '%s/count_%09d_fake_floor_plan.png' % (image_dir, count))
+    
+    # vutils.save_floor_plan(
+    #     real_img, boxes_pred, '%s/count_%09d_fake_floor_plan.png' % (image_dir, count),
+    #     normalize=True)
 
 
 def save_img_results_test(imgs_tcpu, real_box, boxes_pred, count, test_dir):
@@ -400,7 +404,7 @@ class LayoutTrainer(object):
                 self.index_graph_objs_vector = torch.LongTensor(self.index_graph_objs_vector)
 
                 # Old CNN box
-                boxes_pred = self.box_net(self.objs_vector_list_cat, self.graph_objs_vector_cat)
+                # boxes_pred = self.box_net(self.objs_vector_list_cat, self.graph_objs_vector_cat)
 
                 # Adversarial ground truths
                 self.batch_g = torch.max(self.index_graph_objs_vector) + 1
@@ -432,6 +436,7 @@ class LayoutTrainer(object):
                 gen_mks = self.generator(z, given_nds, given_eds) #TODO: Add in multi GPU
 
 
+W
                 # Real images
                 real_validity = self.discriminator(self.rooms_mks,given_nds,given_eds,nd_to_sample)
 
@@ -486,52 +491,54 @@ class LayoutTrainer(object):
                             model_name='generator', best=False)
                         save_model(model=self.discriminator, epoch=epoch, model_dir=self.model_dir,
                             model_name='discriminator', best=False)
-                        self.visualizeSingleBatch(data)
+                        save_img_results(self.imgs_tcpu, self.real_box, gen_mks, epoch, self.image_dir)
+                        # self.visualizeSingleBatch(data)
                     batches_done += n_critic
                 # sys.exit()
 
                 
 
-    #         # ================= #
-    #         #      Valid        #
-    #         # ================= #
-    #         if epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0:
-    #             self.gcn.eval()
-    #             self.box_net.eval()
-    #             boxes_pred_collection = []
-    #             for i in range(len(self.real_box)):
-    #                 graph_objs_vector = self.gcn(self.objs_vector[i][0], self.graph[i])
-    #                 # bounding box prediction
-    #                 boxes_pred_save = self.box_net(self.objs_vector[i][0], graph_objs_vector)
-    #                 boxes_pred_collection.append((boxes_pred_save, self.real_box[i][1]))
-    #             save_img_results(self.imgs_tcpu, self.real_box, boxes_pred_collection, epoch, self.image_dir)
-    #             save_txt_results(self.key, epoch, self.text_dir)
+            # # ================= #
+            # #      Valid        #
+            # # ================= #
+            # if epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0:
+            #     self.gcn.eval()
+            #     self.generator.eval()
+            #     self.box_net.eval()
+            #     boxes_pred_collection = []
+            #     for i in range(len(self.real_box)):
+            #         graph_objs_vector = self.gcn(self.objs_vector[i][0], self.graph[i])
+            #         # bounding box prediction
+            #         boxes_pred_save = self.box_net(self.objs_vector[i][0], graph_objs_vector)
+            #         boxes_pred_collection.append((boxes_pred_save, self.real_box[i][1]))
+            #     save_img_results(self.imgs_tcpu, self.real_box, boxes_pred_collection, epoch, self.image_dir)
+            #     save_txt_results(self.key, epoch, self.text_dir)
 
-    #             # evaluate the model
-    #             print('generating the test data...')
-    #             for step_test, data_test in enumerate(self.dataloader_test, 0):
-    #                 # get data
-    #                 self.imgs_tcpu_test, self.graph_test, self.bbox_test, self.objs_vector_test, self.key_test = self.prepare_data_test(data_test)
-    #                 boxes_pred_test_collection = []
-    #                 for i in range(len(self.bbox_test)):
-    #                     graph_objs_vector_test = self.gcn(self.objs_vector_test[i][0], self.graph_test[i])
-    #                     # bounding box prediction
-    #                     boxes_pred_test = self.box_net(self.objs_vector_test[i][0], graph_objs_vector_test)
-    #                     boxes_pred_test_collection.append((boxes_pred_test, self.bbox_test[i][1]))
-    #                     # record the loss
-    #                     if i == 0:
-    #                         err_bbox_test = self.criterion_bbox(boxes_pred_test, self.bbox_test[i][0])
-    #                     else:
-    #                         err_bbox_test += self.criterion_bbox(boxes_pred_test, self.bbox_test[i][0])
-    #                 err_bbox_test = err_bbox_test / len(self.bbox_test)
-    #                 err_total_test = cfg.TRAIN.COEFF.BBOX_LOSS * err_bbox_test
-    #                 if step_test == 0:
-    #                     save_img_results_test(self.imgs_tcpu_test, self.bbox_test, boxes_pred_test_collection, epoch, self.image_dir_test)
-    #                     save_txt_results(self.key_test, epoch, self.text_dir_test)
-    #                 break
-    #             # plot
-    #             self.testing_epoch.append(epoch)
-    #             self.testing_error.append(err_total_test)
+            #     # evaluate the model
+            #     print('generating the test data...')
+            #     for step_test, data_test in enumerate(self.dataloader_test, 0):
+            #         # get data
+            #         self.imgs_tcpu_test, self.graph_test, self.bbox_test, self.objs_vector_test, self.key_test = self.prepare_data_test(data_test)
+            #         boxes_pred_test_collection = []
+            #         for i in range(len(self.bbox_test)):
+            #             graph_objs_vector_test = self.gcn(self.objs_vector_test[i][0], self.graph_test[i])
+            #             # bounding box prediction
+            #             boxes_pred_test = self.box_net(self.objs_vector_test[i][0], graph_objs_vector_test)
+            #             boxes_pred_test_collection.append((boxes_pred_test, self.bbox_test[i][1]))
+            #             # record the loss
+            #             if i == 0:
+            #                 err_bbox_test = self.criterion_bbox(boxes_pred_test, self.bbox_test[i][0])
+            #             else:
+            #                 err_bbox_test += self.criterion_bbox(boxes_pred_test, self.bbox_test[i][0])
+            #         err_bbox_test = err_bbox_test / len(self.bbox_test)
+            #         err_total_test = cfg.TRAIN.COEFF.BBOX_LOSS * err_bbox_test
+            #         if step_test == 0:
+            #             save_img_results_test(self.imgs_tcpu_test, self.bbox_test, boxes_pred_test_collection, epoch, self.image_dir_test)
+            #             save_txt_results(self.key_test, epoch, self.text_dir_test)
+            #         break
+            #     # plot
+            #     self.testing_epoch.append(epoch)
+            #     self.testing_error.append(err_total_test)
     #         # ================ #
     #         #      Saving      #
     #         # ================ #

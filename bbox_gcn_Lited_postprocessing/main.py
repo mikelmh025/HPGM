@@ -60,11 +60,7 @@ if __name__ == "__main__":
     # Get data loader
     imsize = cfg.TREE.BASE_SIZE * (2 ** (cfg.TREE.BRANCH_NUM-1))
     image_transform = transforms.Compose([
-                                         ])
-    num_gpu = len(cfg.GPU_ID.split(','))
-    if cfg.TRAIN.FLAG:
-        from datasets import TextDataset
-        dataset_train = TextDataset(cfg.DATA_DIR, base_size=cfg.TREE.BASE_SIZE,
+                                         ])sample_intervalDIR, base_size=cfg.TREE.BASE_SIZE,
                                     transform=image_transform, train_set=True) ## USING test data for train !!!!!!!!
         dataset_test = TextDataset(cfg.DATA_DIR, base_size=cfg.TREE.BASE_SIZE,
                                    transform=image_transform, train_set=False)
